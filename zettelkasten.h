@@ -249,14 +249,14 @@ public:
     std::string replacement(1, ch);
     std::string str = findAndReplaceAll(deckName, "::", replacement);
     std::vector<std::string> parents = stringToVector<std::string>(str);
-    auto it = 0;
+    /*auto it = 0;*/
     for (const std::string par : parents) {
 
       std::string url = vectorToString(parseVectorUpToString(parents, par));
       uint64_t par1 = getDeckByName(url);
       if (0 == par1) {
         createDeck(findAndReplaceAll(url, replacement, "::"));
-        it++;
+        /*it++;*/
       } else {
         d.parents.push_back(&boxes[par1]);
       }
@@ -334,7 +334,6 @@ public:
         + std::to_string(c.templateIdNoteVar[1]) + ", "
         + std::to_string(c.deckId) + ", '"
         + revHistStr + "', '" + timesHistStr + "', '" + ratHistStr + "');";
-      std::cout << sql; 
       if (sqlite3_exec(shelf, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
         std::cerr << "SQL error: " << errMsg << std::endl;
         sqlite3_free(errMsg);
@@ -356,6 +355,19 @@ public:
       sql = "INSERT INTO boxes(deckId, deckName) VALUES ("
         + std::to_string(did) + ", '"
         + dk.name + "');";
+      if (sqlite3_exec(shelf, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
+            std::cerr << "SQL error card: " << errMsg << std::endl;
+            sqlite3_free(errMsg);
+            return 0;
+      }
+    }
+    for(const auto& [tid, tplt] : templates) {
+      sql = "INSERT INTO templateCollection(templateId, templateName, frontLayout, reverseLayout, fldNames) VALUES ("
+        + std::to_string(tid) + ", '"
+        + tplt.name + "', '" 
+        + vectorToString(tplt.frontLayout) + "', '"
+        + vectorToString(tplt.reverseLayout) + "', '"
+        + vectorToString(tplt.fldNames) + "');";
       std::cout << sql;
       if (sqlite3_exec(shelf, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
             std::cerr << "SQL error card: " << errMsg << std::endl;
@@ -366,9 +378,7 @@ public:
     sqlite3_close(shelf);
     return 1;
   }
-
-  
-
+  int loadFromDatabase(const std::string &dbName) {}
 };
 
 #endif
