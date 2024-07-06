@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
+#include <cstdio>
 #include <cstdint>
 #include <functional>
 #include <iostream>
@@ -282,7 +283,8 @@ public:
     sqlite3 *shelf;
     int rc;
     char *errMsg;
-    rc = sqlite3_open("kasten.kasten1", &shelf);
+    const char* tempName = "kasten.kasten1";
+    rc = sqlite3_open(tempName, &shelf);
     if (rc) {
       std::cout << sqlite3_errmsg(shelf);
       return 0;
@@ -376,6 +378,11 @@ public:
       }
     }
     sqlite3_close(shelf);
+
+    const char* newName = dbName.c_str();
+    if(std::rename(tempName, newName) != 0) {
+      std::perror("Error renaming new database");
+    }
     return 1;
   }
   int loadFromDatabase(const std::string &dbName) {}
