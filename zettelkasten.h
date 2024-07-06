@@ -341,8 +341,8 @@ public:
         return 0;
       } 
     }
-    for(const auto& [nid, note] : noteStack) {
-      std::string flds = vectorToString(note.flds);
+    for(const auto& [nid, nt] : noteStack) {
+      std::string flds = vectorToString(nt.flds);
       sql = "INSERT INTO notes(noteId, flds) VALUES ("
         + std::to_string(nid) + ", '"
         + flds + "');";
@@ -352,13 +352,23 @@ public:
             return 0;
         }
     }
-
+    for(const auto& [did, dk] : boxes) {
+      sql = "INSERT INTO boxes(deckId, deckName) VALUES ("
+        + std::to_string(did) + ", '"
+        + dk.name + "');";
+      std::cout << sql;
+      if (sqlite3_exec(shelf, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
+            std::cerr << "SQL error card: " << errMsg << std::endl;
+            sqlite3_free(errMsg);
+            return 0;
+      }
+    }
     sqlite3_close(shelf);
     return 1;
   }
 
   
 
-}; // namespace Zettelkasten
+};
 
 #endif
