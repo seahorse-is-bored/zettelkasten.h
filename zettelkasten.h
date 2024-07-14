@@ -205,35 +205,34 @@ public:
     return cardFace;
   }
 
-  uint64_t createNote(uint64_t templateId, std::vector<std::string> flds,
-                      uint64_t deckId) {
+  uint64_t createNote(uint64_t templateId, std::vector<std::string> flds, uint64_t deckId) {
     note n;
     cardTemplate t = templates[templateId];
     if (flds.size() != t.fldNames.size()) {
-      std::cerr << "unequal card size";
-      return 0;
+        std::cerr << "unequal card size";
+        return 0;
     }
     n.flds = flds;
     n.noteId = generateIds('n');
     size_t it = 0;
     for (const std::string &layout : t.frontLayout) {
-      card c;
-      c.cardId = generateIds('c');
-      c.noteId = n.noteId;
-      c.templateIdNoteVar = {templateId, it};
-      c.deckId = deckId;
-      n.cards.push_back(c);
-      /*allCards[c.cardId] = &n.cards[it];*/
-      it++;
+        card c;
+        c.cardId = generateIds('c');
+        c.noteId = n.noteId;
+        c.templateIdNoteVar = {templateId, it};
+        c.deckId = deckId;
+        c.revHistory = {}; 
+        n.cards.push_back(c);
+        it++;
     }
     noteStack[n.noteId] = n;
-    it=0;
+    it = 0;
     for (const auto c : noteStack[n.noteId].cards) {
-      allCards[c.cardId] = &noteStack[n.noteId].cards[it];
-      it++;
+        allCards[c.cardId] = &noteStack[n.noteId].cards[it];
+        it++;
     }
     return n.noteId;
-  }
+}
 
   void appendTemplate(cardTemplate &templateNoId) {
     templateNoId.id = generateIds('t');
@@ -288,6 +287,35 @@ public:
     card c = *allCards[cardId];
     c.revHistory.push_back(h);
   }
+  
+  
+
+  void addReview(uint64_t cardId, uint64_t rating) {
+    auto now = std::chrono::system_clock::now();
+    auto now_time_t = std::chrono::system_clock::to_time_t(now);
+    auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+    if (allCards.find(cardId)==allCards.end()) {
+      std::cerr << "card not found" << "\n";
+      return;
+    }
+    card* c = allCards[cardId];
+    reviewHistory rh;
+    if(c->revHistory.empty()) {
+      rh.timeBetween = 0;
+      rh.rating =  rating;
+      rh.timeStamp = 0;
+    }
+    else {
+      reviewHistory rh_prev;
+      rh_prev = c->revHistory.back();
+      rh.timeBetween = now_ms - rh_prev.timeStamp;
+      rh.rating = rating;
+      rh.timeStamp =  now_ms;
+    }
+    c->revHistory.push_back(rh);
+  }
+
+
   int createDatabase(const std::string &dbName) {
     sqlite3 *shelf;
     int rc;
@@ -304,7 +332,7 @@ public:
       "noteId INTEGER,\n"
       "noteVar INTEGER,\n"
       "deckId INTEGER, \n"
-      "revHistory TEXT,\n"
+      "timeBetween TEXT,\n"
       "timeHistory TEXT, \n"
       "ratingHistory TEXT);\n"
       "CREATE TABLE notes(\n"
@@ -326,24 +354,24 @@ public:
     }
     for (const auto& [cid, c_ptr] : allCards) {
       card c = *c_ptr;
-      std::string revHistStr = "";
+      std::string timeBetweenStr = "";
       std::string ratHistStr = "";
       std::string timesHistStr = "";
-      if (sizeof(c.revHistory) > 24) { // 24 is the size of an empty reviewHistory vector
+      if (!c.revHistory.empty()) {
           for(const auto rev : c.revHistory) {
             char sep = 31;
-            revHistStr = revHistStr + sep + std::to_string(rev.timeBetween);
-            ratHistStr = ratHistStr + sep + std::to_string(rev.rating);
-            timesHistStr = timesHistStr + sep + std::to_string(rev.timeStamp);
+            timeBetweenStr = timeBetweenStr.empty() ? std::to_string(rev.timeBetween) : timeBetweenStr + sep + std::to_string(rev.timeBetween);
+            ratHistStr = ratHistStr.empty() ? std::to_string(rev.rating) : ratHistStr + sep + std::to_string(rev.rating);
+            timesHistStr =timesHistStr.empty() ? std::to_string(rev.timeStamp) : timesHistStr + sep + std::to_string(rev.timeStamp);
           }
       }
-      sql = "INSERT INTO cardPile(cardId, templateId, noteId, noteVar, deckId, revHistory, timeHistory, ratingHistory) VALUES ("
+      sql = "INSERT INTO cardPile(cardId, templateId, noteId, noteVar, deckId, timeBetween, timeHistory, ratingHistory) VALUES ("
         + std::to_string(c.cardId) + ", "
         + std::to_string(c.templateIdNoteVar[0]) + ", "
         + std::to_string(c.noteId) + ", "
         + std::to_string(c.templateIdNoteVar[1]) + ", "
         + std::to_string(c.deckId) + ", '"
-        + revHistStr + "', '" + timesHistStr + "', '" + ratHistStr + "');";
+        + timeBetweenStr + "', '" + timesHistStr + "', '" + ratHistStr + "');";
       if (sqlite3_exec(shelf, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
         std::cerr << "SQL error: " << errMsg << std::endl;
         sqlite3_free(errMsg);
@@ -416,11 +444,11 @@ public:
             uint64_t nId = sqlite3_column_int64(stmt, 2);
             uint64_t nVar = sqlite3_column_int64(stmt, 3);
             uint64_t dId = sqlite3_column_int64(stmt, 4);
-            const char *revHistCStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+            const char *timeBetweenCStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
             const char *timesHistCStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
             const char *ratHistCStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
 
-            std::string revHistStr = revHistCStr ? revHistCStr : "";
+            std::string timeBetweenStr = timeBetweenCStr ? timeBetweenCStr : "";
             std::string timesHistStr = timesHistCStr ? timesHistCStr : "";
             std::string ratHistStr = ratHistCStr ? ratHistCStr : "";
 
@@ -429,17 +457,19 @@ public:
             c.templateIdNoteVar = {tId, nVar};
             c.deckId = dId;
 
-            if (!revHistStr.empty()) {
-                std::vector<std::string> revHistory = stringToVector<std::string>(revHistStr);
-                std::vector<std::string> timeHistory = stringToVector<std::string>(timesHistStr);
-                std::vector<std::string> ratingHistory = stringToVector<std::string>(ratHistStr);
-
-                for (size_t i = 0; i < revHistory.size(); ++i) {
+            if (!timeBetweenStr.empty()) {
+                std::cout << timeBetweenStr << "\t" << timesHistStr << "\t" << ratHistStr <<"\n";
+                std::vector<uint64_t> timeBetween = stringToVector<uint64_t>(timeBetweenStr);
+                std::vector<uint64_t> timeHistory = stringToVector<uint64_t>(timesHistStr);
+                std::vector<uint64_t> ratingHistory = stringToVector<uint64_t>(ratHistStr);
+                size_t i = 0;
+                for (const auto &rh : timeHistory) {
                     reviewHistory h;
-                    h.timeBetween = std::stoll(revHistory[i]);
-                    h.timeStamp = std::stoll(timeHistory[i]);
-                    h.rating = std::stoll(ratingHistory[i]);
+                    h.timeBetween = timeBetween[i];
+                    h.timeStamp =  timeHistory[i];
+                    h.rating = ratingHistory[i];
                     c.revHistory.push_back(h);
+                    i++;
                 }
             }
            
@@ -467,8 +497,7 @@ public:
 
             for (auto &[cid, c] : cStack) {
                 if (c.noteId == nId) {
-                    n.cards.push_back(c);
-    
+                  n.cards.push_back(c);
                 }
             }
             noteStack[n.noteId] = n;
