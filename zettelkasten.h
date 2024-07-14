@@ -121,6 +121,7 @@ private:
     return result;
   }
 
+
   std::vector<std::string>
   parseVectorUpToString(const std::vector<std::string> &vec,
                         const std::string &target) {
@@ -239,13 +240,16 @@ public:
     templates[templateNoId.id] = templateNoId;
   }
 
-  void createDeck(std::string deckName) {
+  void createDeck(std::string deckName, uint64_t did = 0) {
     deck d;
     d.name = deckName;
     if (getDeckByName(deckName) != 0) {
       return;
     }
     d.deckId = generateIds('d');
+    if(did !=0 & !boxes.count(did)) {
+      d.deckId = did;
+    }
     char ch = 31;
     std::string replacement(1, ch);
     std::string str = findAndReplaceAll(deckName, "::", replacement);
@@ -275,6 +279,11 @@ public:
     return 0;
   }
 
+  std::string printCardFromId(uint64_t id, const char side) {
+    card c = *allCards[id];  
+    return displayCard(c, side);
+  }
+
   void loadHistory(reviewHistory &h, uint64_t cardId) {
     card c = *allCards[cardId];
     c.revHistory.push_back(h);
@@ -287,7 +296,7 @@ public:
     rc = sqlite3_open(tempName, &shelf);
     if (rc) {
       std::cout << sqlite3_errmsg(shelf);
-      return 0;
+      return 1;
     }
     std::string sql = "CREATE TABLE cardPile(\n"
       "cardId INTEGER,\n"
@@ -313,11 +322,10 @@ public:
     if(sqlite3_exec(shelf,sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
       std::cerr << "SQL error: " << errMsg << std::endl;
       sqlite3_free(errMsg);
-      return 0;
+      return 1;
     }
     for (const auto& [cid, c_ptr] : allCards) {
       card c = *c_ptr;
-      /*std::cout << << std::endl;*/
       std::string revHistStr = "";
       std::string ratHistStr = "";
       std::string timesHistStr = "";
@@ -339,8 +347,8 @@ public:
       if (sqlite3_exec(shelf, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
         std::cerr << "SQL error: " << errMsg << std::endl;
         sqlite3_free(errMsg);
-        return 0;
-      } 
+        return 1;
+      }
     }
     for(const auto& [nid, nt] : noteStack) {
       std::string flds = vectorToString(nt.flds);
@@ -350,7 +358,7 @@ public:
         if (sqlite3_exec(shelf, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
             std::cerr << "SQL error card: " << errMsg << std::endl;
             sqlite3_free(errMsg);
-            return 0;
+            return 1;
         }
     }
     for(const auto& [did, dk] : boxes) {
@@ -360,7 +368,7 @@ public:
       if (sqlite3_exec(shelf, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
             std::cerr << "SQL error card: " << errMsg << std::endl;
             sqlite3_free(errMsg);
-            return 0;
+            return 1;
       }
     }
     for(const auto& [tid, tplt] : templates) {
@@ -370,11 +378,10 @@ public:
         + vectorToString(tplt.frontLayout) + "', '"
         + vectorToString(tplt.reverseLayout) + "', '"
         + vectorToString(tplt.fldNames) + "');";
-      std::cout << sql;
       if (sqlite3_exec(shelf, sql.c_str(), nullptr, nullptr, &errMsg) != SQLITE_OK) {
             std::cerr << "SQL error card: " << errMsg << std::endl;
             sqlite3_free(errMsg);
-            return 0;
+            return 1;
       }
     }
     sqlite3_close(shelf);
@@ -383,9 +390,158 @@ public:
     if(std::rename(tempName, newName) != 0) {
       std::perror("Error renaming new database");
     }
-    return 1;
+    return 0;
   }
-  int loadFromDatabase(const std::string &dbName) {}
+  int loadFromDatabase(const std::string &dbName) {
+    sqlite3 *shelf;
+    int rc;
+    char *errMsg = nullptr;
+
+    rc = sqlite3_open(dbName.c_str(), &shelf);
+    if (rc != SQLITE_OK) {
+        std::cerr << "cannot open database: " << sqlite3_errmsg(shelf) << std::endl;
+        sqlite3_close(shelf);
+        return 1;
+    }
+
+    std::string sql = "SELECT * FROM cardPile;";
+    sqlite3_stmt *stmt;
+    std::unordered_map<uint64_t, card> cStack;
+
+    if (sqlite3_prepare_v2(shelf, sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            card c;
+            uint64_t cId = sqlite3_column_int64(stmt, 0);
+            uint64_t tId = sqlite3_column_int64(stmt, 1);
+            uint64_t nId = sqlite3_column_int64(stmt, 2);
+            uint64_t nVar = sqlite3_column_int64(stmt, 3);
+            uint64_t dId = sqlite3_column_int64(stmt, 4);
+            const char *revHistCStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+            const char *timesHistCStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 6));
+            const char *ratHistCStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 7));
+
+            std::string revHistStr = revHistCStr ? revHistCStr : "";
+            std::string timesHistStr = timesHistCStr ? timesHistCStr : "";
+            std::string ratHistStr = ratHistCStr ? ratHistCStr : "";
+
+            c.cardId = cId;
+            c.noteId = nId;
+            c.templateIdNoteVar = {tId, nVar};
+            c.deckId = dId;
+
+            if (!revHistStr.empty()) {
+                std::vector<std::string> revHistory = stringToVector<std::string>(revHistStr);
+                std::vector<std::string> timeHistory = stringToVector<std::string>(timesHistStr);
+                std::vector<std::string> ratingHistory = stringToVector<std::string>(ratHistStr);
+
+                for (size_t i = 0; i < revHistory.size(); ++i) {
+                    reviewHistory h;
+                    h.timeBetween = std::stoll(revHistory[i]);
+                    h.timeStamp = std::stoll(timeHistory[i]);
+                    h.rating = std::stoll(ratingHistory[i]);
+                    c.revHistory.push_back(h);
+                }
+            }
+           
+
+            cStack[c.cardId] = c;
+        }
+        sqlite3_finalize(stmt);
+    } else {
+        std::cerr << "Failed to prepare statement for cardPile: " << sqlite3_errmsg(shelf) << std::endl;
+        sqlite3_close(shelf);
+        return 1;
+    }
+
+    sql = "SELECT * FROM notes;";
+    if (sqlite3_prepare_v2(shelf, sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            note n;
+            uint64_t nId = sqlite3_column_int64(stmt, 0);
+            const char *fldsCStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+
+            std::string flds = fldsCStr ? fldsCStr : "";
+
+            n.noteId = nId;
+            n.flds = stringToVector<std::string>(flds);
+
+            for (auto &[cid, c] : cStack) {
+                if (c.noteId == nId) {
+                    n.cards.push_back(c);
+    
+                }
+            }
+            noteStack[n.noteId] = n;
+
+            size_t it = 0;
+            for (auto &c : noteStack[n.noteId].cards) {
+                allCards[c.cardId] = &noteStack[n.noteId].cards[it];
+                ++it;
+            }
+        }
+        sqlite3_finalize(stmt);
+    } else {
+        std::cerr << "Failed to prepare statement for notes: " << sqlite3_errmsg(shelf) << std::endl;
+        sqlite3_close(shelf);
+        return 1;
+    }
+
+    sql = "SELECT * FROM boxes;";
+    if (sqlite3_prepare_v2(shelf, sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            uint64_t dId = sqlite3_column_int64(stmt, 0);
+            const char *deckNameCStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+            std::string deckName = deckNameCStr ? deckNameCStr : "";
+
+            createDeck(deckName, dId);
+            deck &d = boxes[dId];
+
+            for (const auto &[cid, c] : cStack) {
+                if (c.deckId == dId) {
+                    d.cardIds.push_back(cid);
+                }
+            }
+        }
+        sqlite3_finalize(stmt);
+    } else {
+        std::cerr << "Failed to prepare statement for boxes: " << sqlite3_errmsg(shelf) << std::endl;
+        sqlite3_close(shelf);
+        return 1;
+    }
+
+    sql = "SELECT * FROM templateCollection;";
+    if (sqlite3_prepare_v2(shelf, sql.c_str(), -1, &stmt, nullptr) == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            cardTemplate ct;
+            uint64_t ctId = sqlite3_column_int64(stmt, 0);
+            const char *nameCStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+            const char *frontCStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+            const char *backCStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+            const char *stylingCStr = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+
+            std::string front = frontCStr ? frontCStr : "";
+            std::string back = backCStr ? backCStr : "";
+            std::string fldsStr = stylingCStr ? stylingCStr : "";
+            
+            ct.id = ctId;
+            ct.name = nameCStr ? nameCStr:"";
+            ct.frontLayout = stringToVector<std::string>(front);
+            ct.reverseLayout = stringToVector<std::string>(back);
+            ct.fldNames = stringToVector<std::string>(fldsStr);
+
+            templates[ctId] = ct;
+        }
+        sqlite3_finalize(stmt);
+    } else {
+        std::cerr << "Failed to prepare statement for templateCollection: " << sqlite3_errmsg(shelf) << std::endl;
+        sqlite3_close(shelf);
+        return 1;
+    }
+
+    sqlite3_close(shelf);
+    return 0;
+}
+
 };
 
 #endif
