@@ -34,7 +34,7 @@ struct card {
   uint64_t deckId;
   std::vector<uint64_t> templateIdNoteVar;
   std::vector<reviewHistory> revHistory;
-};` 
+}; 
 ```
 **Description**: Represents a flashcard with an ID, associated note, deck, template details, and review history.
 
@@ -45,7 +45,7 @@ struct note {
   std::vector<card> cards;
   std::vector<std::string> flds;
   uint64_t noteId;
-};` 
+}; 
 ```
 
 **Description**: Represents a note containing multiple cards and fields. Each note has a unique ID.
@@ -115,7 +115,7 @@ uint64_t cardId = zettelkasten.generateIds('c');
 
 ```cpp
 std::string result = zettelkasten.findAndReplaceAll("Hello, world!", "world", "there");
-``` 
+```
 
 
 ### `std::string displayCard(card &c, const char side)`
@@ -134,7 +134,7 @@ std::string result = zettelkasten.findAndReplaceAll("Hello, world!", "world", "t
 
 ```cpp
 std::string frontFace = zettelkasten.displayCard(myCard, 'f');
-``` 
+```
 
 ### `uint64_t createNote(uint64_t templateId, std::vector<std::string> flds, uint64_t deckId)`
 
@@ -153,7 +153,7 @@ std::string frontFace = zettelkasten.displayCard(myCard, 'f');
 
 ```cpp
 uint64_t newNoteId = zettelkasten.createNote(templateId, {"Field1", "Field2"}, deckId);
-``` 
+```
 
 ### `void appendTemplate(cardTemplate &templateNoId)`
 
@@ -172,7 +172,7 @@ newTemplate.name = "Basic";
 newTemplate.frontLayout = {"Front"};
 newTemplate.reverseLayout = {"Back"};
 zettelkasten.appendTemplate(newTemplate);
-``` 
+```
 
 ### `void createDeck(std::string deckName, uint64_t did = 0)`
 
@@ -187,7 +187,7 @@ zettelkasten.appendTemplate(newTemplate);
 
 ```cpp
 zettelkasten.createDeck("Maths::Algebra");
-``` 
+```
 
 ### `uint64_t getDeckByName(const std::string &search)`
 
@@ -204,7 +204,7 @@ zettelkasten.createDeck("Maths::Algebra");
 
 ```cpp
 uint64_t deckId = zettelkasten.getDeckByName("Maths::Algebra");
-``` 
+```
 
 ### `std::string printCardFromId(uint64_t id, const char side)`
 
@@ -222,7 +222,7 @@ uint64_t deckId = zettelkasten.getDeckByName("Maths::Algebra");
 
 ```cpp
 std::string cardFace = zettelkasten.printCardFromId(cardId, 'f');
-``` 
+```
 
 ### `void loadHistory(reviewHistory &h, uint64_t cardId)`
 
@@ -239,7 +239,7 @@ std::string cardFace = zettelkasten.printCardFromId(cardId, 'f');
 ```cpp
 reviewHistory rh = {10, 5, 1625237489};
 zettelkasten.loadHistory(rh, cardId);
-``` 
+```
 
 ### `int createDatabase(const std::string &dbName)`
 
@@ -255,7 +255,7 @@ zettelkasten.loadHistory(rh, cardId);
 
 ```cpp
 int result = zettelkasten.createDatabase("myDatabase.db");
-``` 
+```
 
 ### `int loadFromDatabase(const std::string &dbName)`
 
@@ -270,6 +270,19 @@ int result = zettelkasten.createDatabase("myDatabase.db");
 **Example**:
 ```cpp
 int result = zettelkasten.loadFromDatabase("myDatabase.db");
+```
+
+### `void addHistory(uint64_t cardId, uint64_t rating)`
+
+**Description**: adds a review history element at the current time using milliseconds in the UNIX epoch to the card at a given cardId. If the cardId does not exist it returns early and prints card not found.
+
+**Parameters**:
+-   `cardId`: the Id of the card to be found from allCards
+-   `rating`: the difficulty rating of a card, this functionality is for implementation of SRS in the future
+
+**Example**:
+```cpp
+addHistory(cardId, 3);
 ```
 
 
